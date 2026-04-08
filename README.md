@@ -134,7 +134,7 @@ void clear();                           // Reset internal state
 
 ```mermaid
 flowchart TD
-    A[MIDI Note Input] --> B[Frequency Calculation<br/>440 × 2^((note-69)/12)]
+    A[MIDI Note Input] --> B["Frequency Calculation<br/>440 × 2^((note-69)/12)"]
     B --> C[Pitch Generation]
 
     C --> D[Base Frequency<br/>130 Hz default]
