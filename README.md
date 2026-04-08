@@ -126,7 +126,7 @@ void clear();                           // Reset internal state
 - **Waveform**: Sawtooth^3 (glottal source approximation)
 - **Filters**: 3× Biquad bandpass filters (formants F1, F2, F3)
 - **LFO**: Triangle wave vibrato with delay envelope
-- **Saturation**: tanh soft clipping
+- **Saturation**: tanh soft clipping (beta)
 - **AC Coupling**: DC blocking filter to remove DC offset (R=0.90)
 - **Fade Envelope**: 10ms fade in/out to prevent clicks and pops at note on/off
 
@@ -229,6 +229,7 @@ flowchart TD
 | W     | 380     | 600     | 1900    | 1.0| 0.35| 0.1|
 
 ## Platform Integration
+**Note:** Integration examples are conceptual and not fully tested; platform-specific adjustments may be required.
 
 ### VST/AU (iPlug2)
 ```cpp
@@ -248,6 +249,7 @@ public:
 ```
 
 ### Raspberry Pi Pico (Pico-SDK)
+RP2350 recommended
 ```cpp
 #include "komyo.h"
 
