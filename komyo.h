@@ -94,6 +94,7 @@ class Komyo {
     // Master volume & Filter
     float masterVolume = 0.5f;
     float resonanceQ = 18.0f;
+    float driveAmount = 1.5f; // soft clip or Otoware
 
     // Note on/off management
     bool noteIsActive = false;
@@ -193,6 +194,7 @@ public:
     void setVibratoSpeed(float speed) { vibratoSpeed = speed; }
     void setVibratoDelay(float delay) { vibratoDelay = delay * 0.001f; } // ms to seconds via multiplication
     void setMasterVolume(float vol) { masterVolume = vol; }
+    void setDrive(float drive) { driveAmount = drive; }
     void setQ(float q) { resonanceQ = q; }
     void setBaseFreq(float freq) { baseFreq = freq; }
 
@@ -281,7 +283,7 @@ public:
 
         // Apply master volume and fast soft clipping (instead of tanh)
         out *= masterVolume;
-        out = softClip(out * 1.5f);
+        out = softClip(out * driveAmount); // default is 1.5f
 
         // Filters and Envelopes
         out = dcFilter(out);
