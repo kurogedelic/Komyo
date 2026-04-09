@@ -41,3 +41,9 @@
 *.dwo
 
 .DS_Store
+
+# Claude Code settings
+.claude/
+
+# Test directory
+test/

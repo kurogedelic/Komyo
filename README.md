@@ -8,13 +8,16 @@ WASM Runtime on WebApp
 
 ## Features
 
+- **Equal Loudness**: All vowels have consistent volume across the vocal range (C2-C4)
 - **11 Formant Presets**: Japanese vowels (A, I, U, E, O) plus special phonemes (M, N, AE, Y, R, W)
 - **Real-time Parameter Control**: Vibrato, portamento, pitch offset, formant offset
 - **Note-based Interface**: MIDI-compatible `noteOn()`/`noteOff()` API
 - **Header-only Library**: No compilation required, just include `komyo.h`
-- **Cross-platform**: Works with any C++17 compiler (48kHz fixed sample rate)
+- **Cross-platform**: Works with any C++17 compiler (configurable sample rate)
+- **Microcontroller Ready**: KOMYO_LIGHT_MODE with LUT optimization for RP2040/ESP32
 - **Click-free Envelope**: 10ms fade in/out prevents clicks and pops at note on/off
 - **DC Blocking**: AC coupling removes DC offset for clean output
+- **Soft Clipping**: Adjustable saturation for warm distortion
 
 ## Quick Start
 
@@ -23,8 +26,8 @@ WASM Runtime on WebApp
 
 using namespace Komyo;
 
-// Create instance
-Komyo chanter;
+// Create instance (specify sample rate)
+Komyo chanter(48000.0f);
 
 // Set parameters
 chanter.setVowel(0);           // 0=A, 1=I, 2=U, 3=E, 4=O, 5=M, 6=N, 7=AE, 8=Y, 9=R, 10=W
@@ -32,7 +35,7 @@ chanter.setVibratoDepth(50.0f); // cents
 chanter.setVibratoSpeed(5.5f);  // Hz
 chanter.setMasterVolume(0.5f);
 
-// In your audio callback (48kHz):
+// In your audio callback:
 void audioCallback(float* output, int numSamples) {
     for (int i = 0; i < numSamples; i++) {
         output[i] = chanter.process();  // Generate one sample
@@ -46,28 +49,32 @@ chanter.noteOff();
 
 ## Version History
 
+### v2.0 (2026-04-09)
+- Equal loudness across vowels with normalization gains
+- Fixed bandwidth filters (80Hz) for natural formant response
+- Improved glottal source waveform (squared sawtooth)
+- KOMYO_LIGHT_MODE for microcontrollers (RP2040/ESP32)
+- Configurable sample rate via constructor
+- Soft clipping saturation with `setDriveAmount()`
+- DC blocking filter and fade envelope
+- Performance optimizations
+
 ### v1.2
-- DSP Optimized for Microcontrollers, remove ```tanh``` and ```asin```.
-- Adjustable drive mount level
+- DSP optimization for microcontrollers
+- Adjustable drive amount
 
 ### v1.1
-- **Added DC blocking filter** (AC coupling) to remove DC offset
-- **Added fade envelope** (10ms fade in/out) for click-free note transitions
-- Fade out continues audio processing until envelope completes
-- Fixed pops and clicks at note on/off
+- DC blocking filter
+- Fade envelope for click-free transitions
 
 ### v1.0
 - Initial release
-- 11 formant presets for Japanese vowels
-- Vibrato with delay envelope
-- Portamento for smooth transitions
-- Formant and pitch offset controls
 
 ## API Reference
 
 ### Initialization
 ```cpp
-Komyo();  // Constructor, initializes to A vowel, 130Hz base frequency
+Komyo(float sampleRate = 48000.0f);  // Constructor with sample rate
 ```
 
 ### Vowel Selection
