@@ -46,7 +46,11 @@ chanter.noteOff();
 
 ## Version History
 
-### v1.1 (Current)
+### v1.2
+- DSP Optimized for Microcontrollers, remove ```tanh``` and ```asin```.
+- Adjustable drive mount level
+
+### v1.1
 - **Added DC blocking filter** (AC coupling) to remove DC offset
 - **Added fade envelope** (10ms fade in/out) for click-free note transitions
 - Fade out continues audio processing until envelope completes
@@ -106,6 +110,7 @@ void setVibratoDelay(float ms);         // Vibrato onset delay in ms (0-1000)
 void setMasterVolume(float amp);        // Output level (0.0-1.0)
 void setQ(float q);                     // Formant filter resonance (1-50)
 void setBaseFreq(float freq);           // Base frequency in Hz
+void setDrive(float drive);             // Adjustment drive amount for Clipping
 ```
 
 ### Note Input
@@ -130,87 +135,6 @@ void clear();                           // Reset internal state
 - **AC Coupling**: DC blocking filter to remove DC offset (R=0.90)
 - **Fade Envelope**: 10ms fade in/out to prevent clicks and pops at note on/off
 
-## DSP Signal Flow
-
-```mermaid
-flowchart TD
-    A[MIDI Note Input] --> B["Frequency Calculation<br/>440 × 2^((note-69)/12)"]
-    B --> C[Pitch Generation]
-
-    C --> D[Base Frequency<br/>130 Hz default]
-    C --> E[Pitch Offset<br/>±12 semitones]
-    C --> F[Pitch Portamento<br/>lerp smoothing]
-
-    C --> G[Vibrato LFO]
-    G --> H[Triangle Wave<br/>1-15 Hz]
-    G --> I[Vibrato Depth<br/>0-200 cents]
-    G --> J[Vibrato Delay<br/>0-1000 ms envelope]
-
-    F --> K[Working Frequency]
-    E --> K
-    H --> K
-    I --> K
-    J --> K
-
-    K --> L[Phase Accumulator<br/>48kHz sample rate]
-    L --> M["Sawtooth³ Wave<br/>glottal source"]
-
-    N[Vowel Selection<br/>0-10 presets] --> O[Formant Presets]
-    O --> P1[F1 Frequency]
-    O --> P2[F2 Frequency]
-    O --> P3[F3 Frequency]
-    O --> Q1[G1 Gain]
-    O --> Q2[G2 Gain]
-    O --> Q3[G3 Gain]
-
-    P1 --> R[Formant Interpolation<br/>portamento smoothing]
-    P2 --> R
-    P3 --> R
-    Q1 --> R
-    Q2 --> R
-    Q3 --> R
-
-    R --> S[Formant Offset<br/>±12 semitones]
-
-    M --> T1["Biquad BPF #1<br/>F1 filter"]
-    M --> T2["Biquad BPF #2<br/>F2 filter"]
-    M --> T3["Biquad BPF #3<br/>F3 filter"]
-
-    S --> T1
-    S --> T2
-    S --> T3
-
-    T1 --> U1[× G1]
-    T2 --> U2[× G2]
-    T3 --> U3[× G3]
-
-    U1 --> V[Mix Sum]
-    U2 --> V
-    U3 --> V
-
-    V --> W[Master Volume<br/>0.0-1.0]
-    W --> X[tanh Saturation<br/>soft clipping]
-    X --> Y1[DC Blocking Filter<br/>AC coupling R=0.90]
-    Y1 --> Y2[Fade Envelope<br/>10ms fade in/out]
-    Y2 --> Y[Output Sample]
-
-    A --> FIn1[Start Fade In<br/>gain 0→1]
-    FIn1 --> FIn2[Clear DC Filter]
-    A2[Note Off Request] --> FOut1[Start Fade Out<br/>gain 1→0]
-    FOut1 --> FOut2[Continue Processing<br/>during fade]
-    FOut2 --> FOut3[Stop Note<br/>after fade complete]
-
-    style A fill:#e1f5ff
-    style A2 fill:#ffe1e1
-    style M fill:#ffe1e1
-    style T1 fill:#e1ffe1
-    style T2 fill:#e1ffe1
-    style T3 fill:#e1ffe1
-    style X fill:#fff4e1
-    style Y1 fill:#f0e1ff
-    style Y2 fill:#f0e1ff
-    style Y fill:#e1ffe1
-```
 
 ## Formant Frequencies
 
@@ -231,22 +155,6 @@ flowchart TD
 ## Platform Integration
 **Note:** Integration examples are conceptual and not fully tested; platform-specific adjustments may be required.
 
-### VST/AU (iPlug2)
-```cpp
-#include "komyo.h"
-
-class KomyoVST : public IPlugPlugin {
-private:
-    Komyo::Komyo chanter;
-
-public:
-    void ProcessBlock(float** inputs, float** outputs, int nFrames) {
-        for (int i = 0; i < nFrames; i++) {
-            outputs[0][i] = outputs[1][i] = chanter.process();
-        }
-    }
-};
-```
 
 ### Raspberry Pi Pico (Pico-SDK)
 RP2350 recommended
@@ -261,20 +169,6 @@ void audio_callback() {
 }
 ```
 
-### Electrosmith Daisy
-```cpp
-#include "komyo.h"
-
-Komyo::Komyo chanter;
-
-void AudioCallback(AudioHandle::InputBuffer in,
-                   AudioHandle::OutputBuffer out,
-                   size_t size) {
-    for (size_t i = 0; i < size; i++) {
-        out[0][i] = out[1][i] = chanter.process();
-    }
-}
-```
 
 ## License
 
@@ -297,6 +191,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Acknowledgement
+- Delay Lama by [AudioNerdz](http://www.audionerdz.nl/)
 
 ## Author
 
