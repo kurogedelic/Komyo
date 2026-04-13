@@ -1,6 +1,6 @@
 /*  Komyo */
 /*  Buddhist chanter vocal synthesis engine */
-/*  v2.0 */
+/*  v2.1 */
 /*  by Leo Kuroshita, Hügelton Instruments, Kōbe, Japan. */
 /*  License: MIT */
 
@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 
 namespace Komyo {
 
@@ -109,8 +110,8 @@ inline void ensureLUTsInitialized() {}
 #endif // KOMYO_LIGHT_MODE
 
 struct FormantPreset {
-    float f1, f2, f3;  // Formant frequencies (Hz)
-    float g1, g2, g3;  // Formant gains
+    float f1, f2, f3, f4, f5;  // Formant frequencies (Hz), f4/f5 = 0 disables
+    float g1, g2, g3, g4, g5;  // Formant gains, g4/g5 = 0 disables
     float normalizationGain;  // Gain to normalize loudness across vowels
 };
 
@@ -147,15 +148,15 @@ public:
 
 class Komyo {
     // Sample rate configuration
-    const float sampleRate;
-    const float invSampleRate;
-    const int fadeSamples;
-    const float invFadeSamples;
+    float sampleRate;
+    float invSampleRate;
+    int fadeSamples;
+    float invFadeSamples;
 
     float phase = 0.0f;
     float lfoPhase = 0.0f;
     uint32_t sampleCounter = 0u;
-    BiquadBPF filter1, filter2, filter3;
+    BiquadBPF filter1, filter2, filter3, filter4, filter5;
 
     // 11 formant presets (Japanese vowels + special phonemes)
     static const FormantPreset V_A;
@@ -195,6 +196,11 @@ class Komyo {
     float resonanceQ = 18.0f;
     float driveAmount = 0.8f; // reduced to prevent clipping
 
+    // New v2.1 features
+    float pitchBend = 0.0f;        // ±1.0 = ±2 semitones
+    int waveformType = 0;          // 0=saw^2, 1=saw^3, 2=raw saw
+    float noiseGain = 0.0f;        // Fricative noise amount
+
 
     // Note on/off management
     bool noteIsActive = false;
@@ -217,9 +223,13 @@ class Komyo {
         currentFormant.f1 = lerp(currentFormant.f1, targetFormant.f1, speed);
         currentFormant.f2 = lerp(currentFormant.f2, targetFormant.f2, speed);
         currentFormant.f3 = lerp(currentFormant.f3, targetFormant.f3, speed);
+        currentFormant.f4 = lerp(currentFormant.f4, targetFormant.f4, speed);
+        currentFormant.f5 = lerp(currentFormant.f5, targetFormant.f5, speed);
         currentFormant.g1 = lerp(currentFormant.g1, targetFormant.g1, speed);
         currentFormant.g2 = lerp(currentFormant.g2, targetFormant.g2, speed);
         currentFormant.g3 = lerp(currentFormant.g3, targetFormant.g3, speed);
+        currentFormant.g4 = lerp(currentFormant.g4, targetFormant.g4, speed);
+        currentFormant.g5 = lerp(currentFormant.g5, targetFormant.g5, speed);
         currentFormant.normalizationGain = lerp(currentFormant.normalizationGain, targetFormant.normalizationGain, speed);
     }
 
@@ -302,6 +312,17 @@ public:
     void setDrive(float drive) { driveAmount = drive; }
     void setQ(float q) { resonanceQ = q; }
     void setBaseFreq(float freq) { baseFreq = freq; }
+    void setSampleRate(float newSampleRate) {
+        sampleRate = newSampleRate;
+        invSampleRate = 1.0f / sampleRate;
+        fadeSamples = static_cast<int>(sampleRate * 0.01f);  // 10ms fade
+        invFadeSamples = 1.0f / fadeSamples;
+    }
+
+    // New v2.1 features
+    void setPitchBend(float bend) { pitchBend = bend; }  // ±1.0 = ±2 semitones
+    void setWaveformType(int type) { waveformType = type; }  // 0=saw^2, 1=saw^3, 2=raw saw
+    void setNoiseGain(float gain) { noiseGain = gain; }  // Fricative amount
 
     float getPortamento() const { return portamentoSpeed; }
     float getPitchPortamento() const { return pitchPortamentoSpeed; }
@@ -352,8 +373,11 @@ public:
         // Pitch portamento
         currentFreq = lerp(currentFreq, targetFreq, pitchPortamentoSpeed);
 
-        // Apply pre-calculated pitch ratio
+        // Apply pre-calculated pitch ratio and pitch bend
         float workingFreq = currentFreq * pitchRatio;
+        if (pitchBend != 0.0f) {
+            workingFreq *= std::exp2(pitchBend / 12.0f);  // ±1.0 = ±2 semitones
+        }
 
         // Update vibrato
         vibratoTimer += invSampleRate;
@@ -374,9 +398,27 @@ public:
         phase += workingFreq * invSampleRate;
         if (phase >= 1.0f) phase -= 1.0f;
         float rawSaw = (phase * 2.0f) - 1.0f;
-        // Use squared sawtooth with polarity preservation for better harmonic balance
-        // This provides a softer tone than raw sawtooth while maintaining high-frequency content
-        float glottalSource = rawSaw * (rawSaw < 0.0f ? -rawSaw : rawSaw);
+
+        // Waveform type selection
+        float glottalSource;
+        switch (waveformType) {
+            case 1:  // Cubic (saw^3) - very soft, mellow
+                glottalSource = rawSaw * rawSaw * rawSaw;
+                break;
+            case 2:  // Raw sawtooth - bright, harsh
+                glottalSource = rawSaw;
+                break;
+            case 0:  // Default: squared sawtooth with polarity preservation
+            default:
+                glottalSource = rawSaw * (rawSaw < 0.0f ? -rawSaw : rawSaw);
+                break;
+        }
+
+        // Add fricative noise if enabled
+        if (noiseGain > 0.0f) {
+            float noise = (rand() / (float)RAND_MAX) * 2.0f - 1.0f;
+            glottalSource += noise * noiseGain;
+        }
 
         // Formant interpolation (every sample for smooth transitions)
         interpolateFormant(portamentoSpeed);
@@ -398,12 +440,31 @@ public:
             filter1.setCoefficients(currentFormant.f1 * formantRatio, q1, invSampleRate);
             filter2.setCoefficients(currentFormant.f2 * formantRatio, q2, invSampleRate);
             filter3.setCoefficients(currentFormant.f3 * formantRatio, q3, invSampleRate);
+
+            // F4 and F5 (optional, only if gain > 0)
+            if (currentFormant.g4 > 0.0f && currentFormant.f4 > 0.0f) {
+                float q4 = (currentFormant.f4 * formantRatio) / scaledBandwidth;
+                q4 = (q4 < 2.0f) ? 2.0f : (q4 > 50.0f) ? 50.0f : q4;
+                filter4.setCoefficients(currentFormant.f4 * formantRatio, q4, invSampleRate);
+            }
+            if (currentFormant.g5 > 0.0f && currentFormant.f5 > 0.0f) {
+                float q5 = (currentFormant.f5 * formantRatio) / scaledBandwidth;
+                q5 = (q5 < 2.0f) ? 2.0f : (q5 > 50.0f) ? 50.0f : q5;
+                filter5.setCoefficients(currentFormant.f5 * formantRatio, q5, invSampleRate);
+            }
         }
 
         float out = 0.0f;
         out += filter1.process(glottalSource) * currentFormant.g1;
         out += filter2.process(glottalSource) * currentFormant.g2;
         out += filter3.process(glottalSource) * currentFormant.g3;
+        // F4 and F5 (optional, only if gain > 0)
+        if (currentFormant.g4 > 0.0f) {
+            out += filter4.process(glottalSource) * currentFormant.g4;
+        }
+        if (currentFormant.g5 > 0.0f) {
+            out += filter5.process(glottalSource) * currentFormant.g5;
+        }
 
         // Apply vowel-specific normalization gain for equal loudness
         out *= currentFormant.normalizationGain;
@@ -438,17 +499,17 @@ public:
 
 // Normalization gains optimized for C4 (primary vocal range)
 // C4 represents the most common vocal frequency range
-inline const FormantPreset Komyo::V_A  = { 700.0f, 1200.0f, 2500.0f, 1.0f, 0.6f, 0.2f, 1.000f };
-inline const FormantPreset Komyo::V_I  = { 300.0f, 2300.0f, 3000.0f, 1.0f, 0.3f, 0.1f, 0.707f };
-inline const FormantPreset Komyo::V_U  = { 350.0f, 1200.0f, 2100.0f, 1.0f, 0.4f, 0.1f, 0.788f };
-inline const FormantPreset Komyo::V_E  = { 450.0f, 1800.0f, 2600.0f, 1.0f, 0.5f, 0.2f, 0.914f };
-inline const FormantPreset Komyo::V_O  = { 500.0f,  800.0f, 2300.0f, 1.0f, 0.7f, 0.1f, 0.690f };
-inline const FormantPreset Komyo::V_M  = { 250.0f, 1200.0f, 2200.0f, 1.0f, 0.1f, 0.05f, 0.500f };
-inline const FormantPreset Komyo::V_N  = { 200.0f,  800.0f, 1800.0f, 1.0f, 0.15f, 0.05f, 0.420f };
-inline const FormantPreset Komyo::V_AE = { 550.0f, 1700.0f, 2400.0f, 1.0f, 0.55f, 0.15f, 0.350f };
-inline const FormantPreset Komyo::V_Y  = { 300.0f, 1700.0f, 2200.0f, 1.0f, 0.45f, 0.15f, 0.794f };
-inline const FormantPreset Komyo::V_R  = { 400.0f, 1100.0f, 1700.0f, 1.0f, 0.5f, 0.1f, 0.930f };
-inline const FormantPreset Komyo::V_W  = { 380.0f,  600.0f, 1900.0f, 1.0f, 0.35f, 0.1f, 0.849f };
+inline const FormantPreset Komyo::V_A  = { 700.0f, 1200.0f, 2500.0f, 0.0f, 0.0f, 1.0f, 0.6f, 0.2f, 0.0f, 0.0f, 1.000f };
+inline const FormantPreset Komyo::V_I  = { 260.0f, 2800.0f, 3300.0f, 0.0f, 0.0f, 1.0f, 0.6f, 0.2f, 0.0f, 0.0f, 0.707f };
+inline const FormantPreset Komyo::V_U  = { 350.0f, 1200.0f, 2100.0f, 0.0f, 0.0f, 1.0f, 0.4f, 0.1f, 0.0f, 0.0f, 0.788f };
+inline const FormantPreset Komyo::V_E  = { 450.0f, 1800.0f, 2600.0f, 0.0f, 0.0f, 1.0f, 0.5f, 0.2f, 0.0f, 0.0f, 0.914f };
+inline const FormantPreset Komyo::V_O  = { 500.0f,  800.0f, 2300.0f, 0.0f, 0.0f, 1.0f, 0.7f, 0.1f, 0.0f, 0.0f, 0.690f };
+inline const FormantPreset Komyo::V_M  = { 250.0f, 1200.0f, 2200.0f, 0.0f, 0.0f, 1.0f, 0.1f, 0.05f, 0.0f, 0.0f, 0.500f };
+inline const FormantPreset Komyo::V_N  = { 200.0f,  800.0f, 1800.0f, 0.0f, 0.0f, 1.0f, 0.15f, 0.05f, 0.0f, 0.0f, 0.420f };
+inline const FormantPreset Komyo::V_AE = { 550.0f, 1700.0f, 2400.0f, 0.0f, 0.0f, 1.0f, 0.55f, 0.15f, 0.0f, 0.0f, 0.350f };
+inline const FormantPreset Komyo::V_Y  = { 300.0f, 1700.0f, 2200.0f, 0.0f, 0.0f, 1.0f, 0.45f, 0.15f, 0.0f, 0.0f, 0.794f };
+inline const FormantPreset Komyo::V_R  = { 400.0f, 1100.0f, 1700.0f, 0.0f, 0.0f, 1.0f, 0.5f, 0.1f, 0.0f, 0.0f, 0.930f };
+inline const FormantPreset Komyo::V_W  = { 380.0f,  600.0f, 1900.0f, 0.0f, 0.0f, 1.0f, 0.35f, 0.1f, 0.0f, 0.0f, 0.849f };
 
 } // namespace Komyo
 

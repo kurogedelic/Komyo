@@ -8,9 +8,13 @@ WASM Runtime on WebApp
 
 ## Features
 
+- **Rich Formant Synthesis**: 5-formant architecture (F1-F5) for rich vocal timbre
 - **Equal Loudness**: All vowels have consistent volume across the vocal range (C2-C4)
 - **11 Formant Presets**: Japanese vowels (A, I, U, E, O) plus special phonemes (M, N, AE, Y, R, W)
-- **Real-time Parameter Control**: Vibrato, portamento, pitch offset, formant offset
+- **Waveform Selection**: 3 glottal source waveforms (saw^2, saw^3, raw saw)
+- **Pitch Bend**: MIDI-standard pitch bend (±2 semitones)
+- **Fricative Noise**: Add noise for consonants (s, sh, h, etc.)
+- **Real-time Parameter Control**: Vibrato, portamento, pitch offset, formant offset, Q parameter
 - **Note-based Interface**: MIDI-compatible `noteOn()`/`noteOff()` API
 - **Header-only Library**: No compilation required, just include `komyo.h`
 - **Cross-platform**: Works with any C++17 compiler (configurable sample rate)
@@ -26,7 +30,7 @@ WASM Runtime on WebApp
 
 using namespace Komyo;
 
-// Create instance (specify sample rate)
+// Create instance with sample rate (default 48000Hz)
 Komyo chanter(48000.0f);
 
 // Set parameters
@@ -47,7 +51,55 @@ chanter.noteOn(60.0f);  // MIDI note 60 (C4)
 chanter.noteOff();
 ```
 
+## Advanced Examples
+
+### Pitch Bending
+```cpp
+chanter.setPitchBend(0.5f);   // Bend up 1 semitone
+chanter.setPitchBend(-0.5f);  // Bend down 1 semitone
+```
+
+### Waveform Selection
+```cpp
+chanter.setWaveformType(0);  // Squared sawtooth (default, balanced)
+chanter.setWaveformType(1);  // Cubic (soft, mellow)
+chanter.setWaveformType(2);  // Raw sawtooth (bright, harsh)
+```
+
+### Consonant Synthesis
+```cpp
+// Fricative consonants (s, sh, h)
+chanter.setNoiseGain(0.2f);   // Add breath noise
+chanter.setVowel(1);          // Target vowel
+// ... after consonant
+chanter.setNoiseGain(0.0f);   // Disable noise
+```
+
+### Buddhist Chanting
+```cpp
+chanter.setWaveformType(1);      // Soft waveform
+chanter.setVibratoDepth(30.0f);  // Deep vibrato
+chanter.setVibratoSpeed(4.5f);   // Slow, meditative
+chanter.setVowel(2);            // U (deep vowel)
+chanter.noteOn(43.0f);          // G2 - very low
+```
+
+### Dynamic Sample Rate Change
+```cpp
+// When DAW sample rate changes
+chanter.setSampleRate(44100.0f);  // Change to 44.1kHz
+chanter.setSampleRate(48000.0f);  // Change back to 48kHz
+```
+
 ## Version History
+
+### v2.1 (2026-04-12)
+- Extended formant architecture (F4, F5) for richer timbre
+- Pitch bend support (±2 semitones) with `setPitchBend()`
+- Waveform type selection (saw^2, saw^3, raw saw) with `setWaveformType()`
+- Fricative noise generation with `setNoiseGain()` for consonants
+- Improved consonant-vowel coarticulation
+- Buddhist chant and mantra synthesis capabilities
 
 ### v2.0 (2026-04-09)
 - Equal loudness across vowels with normalization gains
@@ -74,7 +126,10 @@ chanter.noteOff();
 
 ### Initialization
 ```cpp
-Komyo(float sampleRate = 48000.0f);  // Constructor with sample rate
+Komyo(float sampleRate = 48000.0f);  // Constructor with sample rate (default 48kHz)
+
+// Change sample rate at runtime
+void setSampleRate(float newSampleRate);  // Update sample rate dynamically
 ```
 
 ### Vowel Selection
@@ -120,6 +175,13 @@ void setBaseFreq(float freq);           // Base frequency in Hz
 void setDrive(float drive);             // Adjustment drive amount for Clipping
 ```
 
+### v2.1 New Features
+```cpp
+void setPitchBend(float bend);          // Pitch bend (±1.0 = ±2 semitones)
+void setWaveformType(int type);         // 0=saw^2, 1=saw^3 (soft), 2=raw saw (bright)
+void setNoiseGain(float gain);          // Fricative noise amount (0.0-1.0)
+```
+
 ### Note Input
 ```cpp
 void noteOn(float midiNote);            // Trigger note (MIDI note number)
@@ -134,13 +196,16 @@ void clear();                           // Reset internal state
 
 ## Technical Details
 
-- **Sample Rate**: Fixed at 48kHz
-- **Waveform**: Sawtooth^3 (glottal source approximation)
-- **Filters**: 3× Biquad bandpass filters (formants F1, F2, F3)
+- **Sample Rate**: Configurable (default 48kHz)
+- **Waveform**: Selectable (sawtooth^2 default, sawtooth^3, raw sawtooth)
+- **Filters**: 5× Biquad bandpass filters (formants F1-F5, F4/F5 optional)
+- **Filter Bandwidth**: Constant 80Hz scaled by Q parameter
+- **Pitch Bend**: ±2 semitones (exp2-based smooth transition)
+- **Noise**: White noise for fricative consonants
 - **LFO**: Triangle wave vibrato with delay envelope
-- **Saturation**: tanh soft clipping (beta)
-- **AC Coupling**: DC blocking filter to remove DC offset (R=0.90)
-- **Fade Envelope**: 10ms fade in/out to prevent clicks and pops at note on/off
+- **Saturation**: Fast soft clipping (x / (1 + |x|))
+- **AC Coupling**: DC blocking filter (R=0.90)
+- **Fade Envelope**: 10ms fade in/out for click-free transitions
 
 
 ## Formant Frequencies
